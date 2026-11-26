@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   CheckCircle,
   XCircle,
@@ -17,13 +18,16 @@ import {
 import api from '@/lib/api';
 
 export default function AdminWorkbenchPage() {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
   const [claims, setClaims] = useState([]);
   const [overview, setOverview] = useState(null);
   const [properties, setProperties] = useState([]);
   const [policies, setPolicies] = useState([]);
 
-  const [activeTab, setActiveTab] = useState('claims'); // 'claims' | 'properties' | 'policies' | 'users'
+  const [activeTab, setActiveTab] = useState('claims');
   const [claimFilter, setClaimFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -33,7 +37,7 @@ export default function AdminWorkbenchPage() {
   const [submitting, setSubmitting] = useState(false);
   const [syncingId, setSyncingId] = useState(null);
 
-  const fetchData = async (role) => {
+ const fetchData = async (role) => {
     try {
       const claimsRes = await api.get('/claims/admin/all');
       const fetchedClaims = claimsRes.data.data || [];
@@ -69,11 +73,34 @@ export default function AdminWorkbenchPage() {
   };
 
   useEffect(() => {
+    const token = localStorage.getItem('stayshield_token');
     const saved = localStorage.getItem('stayshield_user');
     const parsed = saved ? JSON.parse(saved) : null;
+
+    // 1. Not logged in -> redirect to login
+    if (!token || !parsed) {
+      router.replace('/login');
+      return;
+    }
+
+    // 2. Host or unauthorized role -> redirect to host dashboard
+    if (!['super_admin', 'adjuster'].includes(parsed.role)) {
+      router.replace('/dashboard');
+      return;
+    }
+
     setCurrentUser(parsed);
-    fetchData(parsed?.role);
-  }, []);
+    setAuthChecked(true);
+    fetchData(parsed.role);
+  }, [router]);
+
+  if (!authChecked) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-emerald-100 border-t-emerald-600"></div>
+      </div>
+    );
+  }
 
   const handleAdjudicate = async (status) => {
     if (!selectedClaim) return;
