@@ -14,6 +14,7 @@ import {
   Building2,
   RefreshCw,
   Search,
+  History,
 } from 'lucide-react';
 import api from '@/lib/api';
 
@@ -26,6 +27,7 @@ export default function AdminWorkbenchPage() {
   const [overview, setOverview] = useState(null);
   const [properties, setProperties] = useState([]);
   const [policies, setPolicies] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
 
   const [activeTab, setActiveTab] = useState('claims');
   const [claimFilter, setClaimFilter] = useState('ALL');
@@ -37,7 +39,7 @@ export default function AdminWorkbenchPage() {
   const [submitting, setSubmitting] = useState(false);
   const [syncingId, setSyncingId] = useState(null);
 
- const fetchData = async (role) => {
+  const fetchData = async (role) => {
     try {
       const claimsRes = await api.get('/claims/admin/all');
       const fetchedClaims = claimsRes.data.data || [];
@@ -55,19 +57,22 @@ export default function AdminWorkbenchPage() {
 
     if (role === 'super_admin') {
       try {
-        const [ovRes, propRes, polRes] = await Promise.all([
+        const [ovRes, propRes, polRes, auditRes] = await Promise.all([
           api.get('/admin/overview'),
           api.get('/admin/properties'),
           api.get('/admin/policies'),
+          api.get('/admin/audit-logs'),
         ]);
         setOverview(ovRes.data.data);
         setProperties(propRes.data.data || []);
         setPolicies(polRes.data.data || []);
+        setAuditLogs(auditRes.data.data || []);
       } catch (err) {
         console.error(err);
       }
     } else {
       setOverview(null);
+      setAuditLogs([]);
       setActiveTab('claims');
     }
   };
@@ -202,6 +207,15 @@ export default function AdminWorkbenchPage() {
               }`}
             >
               Users ({overview.users.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('audit-logs')}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition ${
+                activeTab === 'audit-logs' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              Audit Logs ({auditLogs.length})
             </button>
           </div>
         )}
@@ -659,6 +673,56 @@ export default function AdminWorkbenchPage() {
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {isSuperAdmin && activeTab === 'audit-logs' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500">
+                <th className="py-3.5 px-4">Timestamp</th>
+                <th className="py-3.5 px-4">Actor</th>
+                <th className="py-3.5 px-4">Action</th>
+                <th className="py-3.5 px-4">Target</th>
+                <th className="py-3.5 px-4">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {auditLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                    No audit events recorded yet.
+                  </td>
+                </tr>
+              ) : (
+                auditLogs.map((entry) => (
+                  <tr key={entry._id} className="align-top hover:bg-slate-50">
+                    <td className="py-3.5 px-4 whitespace-nowrap text-xs text-slate-600">
+                      {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '—'}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="font-medium text-slate-900">
+                        {entry.actorId?.fullName || entry.actorId?.name || entry.actorId?.email || 'Unknown actor'}
+                      </div>
+                      <div className="text-xs text-slate-500">{entry.actorRole}</div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                        {entry.action}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-700">
+                      {entry.targetLabel || entry.targetType}
+                    </td>
+                    <td className="py-3.5 px-4 max-w-md whitespace-normal text-slate-600">
+                      {entry.details || '—'}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

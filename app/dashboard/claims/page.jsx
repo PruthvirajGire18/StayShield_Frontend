@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText, X, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function ClaimsPage() {
@@ -8,6 +8,8 @@ export default function ClaimsPage() {
   const [eligiblePolicies, setEligiblePolicies] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [uploadingInvoice, setUploadingInvoice] = useState(false);
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({
@@ -16,7 +18,8 @@ export default function ClaimsPage() {
     guestReservationCode: '',
     description: '',
     repairInvoiceUrl: '',
-    photoUrl: '',
+    repairInvoiceName: '',
+    evidencePhotos: [],
     damagedItems: [{ itemName: '', category: 'Furniture', estimatedCost: '' }],
   });
 
@@ -59,6 +62,72 @@ export default function ClaimsPage() {
     setForm({ ...form, damagedItems: updated });
   };
 
+  // Upload multiple damage photos to Cloudinary
+  const handlePhotoUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setError('');
+    setUploadingPhotos(true);
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append('files', file));
+
+      const res = await api.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const uploadedUrls = (res.data.data || []).map((item) => item.url);
+      setForm((prev) => ({
+        ...prev,
+        evidencePhotos: [...prev.evidencePhotos, ...uploadedUrls],
+      }));
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to upload damage photos');
+    } finally {
+      setUploadingPhotos(false);
+      e.target.value = '';
+    }
+  };
+
+  const removePhoto = (indexToRemove) => {
+    setForm((prev) => ({
+      ...prev,
+      evidencePhotos: prev.evidencePhotos.filter((_, idx) => idx !== indexToRemove),
+    }));
+  };
+
+  // Upload repair invoice PDF/image to Cloudinary
+  const handleInvoiceUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setError('');
+    setUploadingInvoice(true);
+    try {
+      const formData = new FormData();
+      formData.append('files', file);
+
+      const res = await api.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const uploaded = res.data.data?.[0];
+      if (uploaded) {
+        setForm((prev) => ({
+          ...prev,
+          repairInvoiceUrl: uploaded.url,
+          repairInvoiceName: uploaded.originalName || file.name,
+        }));
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to upload repair invoice');
+    } finally {
+      setUploadingInvoice(false);
+      e.target.value = '';
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -70,7 +139,7 @@ export default function ClaimsPage() {
         guestReservationCode: form.guestReservationCode,
         description: form.description,
         repairInvoiceUrl: form.repairInvoiceUrl,
-        evidencePhotos: form.photoUrl ? [form.photoUrl] : [],
+        evidencePhotos: form.evidencePhotos,
         damagedItems: form.damagedItems.map((i) => ({
           ...i,
           estimatedCost: Number(i.estimatedCost),
@@ -85,7 +154,8 @@ export default function ClaimsPage() {
         guestReservationCode: '',
         description: '',
         repairInvoiceUrl: '',
-        photoUrl: '',
+        repairInvoiceName: '',
+        evidencePhotos: [],
         damagedItems: [{ itemName: '', category: 'Furniture', estimatedCost: '' }],
       });
       await loadData();
@@ -141,7 +211,7 @@ export default function ClaimsPage() {
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Select Active Policy</label>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">Select Active Policy</label>
                   <select
                     required
                     value={form.policyId}
@@ -157,7 +227,7 @@ export default function ClaimsPage() {
                 </div>
 
                 <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Incident Date</label>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">Incident Date</label>
                   <input
                     type="date"
                     required
@@ -168,7 +238,7 @@ export default function ClaimsPage() {
                 </div>
 
                 <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
                     Booking Confirmation Code
                   </label>
                   <input
@@ -237,7 +307,7 @@ export default function ClaimsPage() {
               </div>
 
               <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">Incident Description</label>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Incident Description</label>
                 <textarea
                   rows={3}
                   required
@@ -249,37 +319,114 @@ export default function ClaimsPage() {
                 />
               </div>
 
+              {/* Direct Cloudinary File Uploads */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Damage Photos Upload */}
                 <div>
                   <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    Damage Photo URL (Evidence)
+                    Damage Photos (Evidence)
                   </label>
-                  <input
-                    type="url"
-                    placeholder="https://images.unsplash.com/photo-..."
-                    value={form.photoUrl}
-                    onChange={(e) => setForm({ ...form, photoUrl: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm shadow-sm transition-all duration-200 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-500/10"
-                  />
+                  <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-4 text-center cursor-pointer transition hover:border-emerald-500 hover:bg-emerald-50/30">
+                    {uploadingPhotos ? (
+                      <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Uploading photos...
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="w-5 h-5 text-slate-500 mb-1" />
+                        <span className="text-xs font-semibold text-slate-700">
+                          Click to upload damage photos
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5">
+                          JPG, PNG, WEBP (Max 10MB each)
+                        </span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      disabled={uploadingPhotos}
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {form.evidencePhotos.length > 0 && (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {form.evidencePhotos.map((url, idx) => (
+                        <div key={idx} className="relative group rounded-lg overflow-hidden border border-slate-200">
+                          <img src={url} alt={`Evidence ${idx + 1}`} className="w-full h-20 object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(idx)}
+                            className="absolute top-1 right-1 rounded-full bg-slate-900/75 p-1 text-white hover:bg-rose-600"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
+                {/* Repair Invoice PDF Upload */}
                 <div>
                   <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    Repair Quote / Invoice URL
+                    Repair Quote / Invoice (PDF or Image)
                   </label>
-                  <input
-                    type="url"
-                    placeholder="https://example.com/repair-quote.pdf"
-                    value={form.repairInvoiceUrl}
-                    onChange={(e) => setForm({ ...form, repairInvoiceUrl: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm shadow-sm transition-all duration-200 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-500/10"
-                  />
+                  <label className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-4 text-center cursor-pointer transition hover:border-emerald-500 hover:bg-emerald-50/30">
+                    {uploadingInvoice ? (
+                      <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Uploading invoice...
+                      </div>
+                    ) : (
+                      <>
+                        <FileText className="w-5 h-5 text-slate-500 mb-1" />
+                        <span className="text-xs font-semibold text-slate-700">
+                          Click to upload repair invoice
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5">
+                          PDF, JPG, PNG (Max 10MB)
+                        </span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      disabled={uploadingInvoice}
+                      onChange={handleInvoiceUpload}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {form.repairInvoiceUrl && (
+                    <div className="mt-3 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-xs">
+                      <a
+                        href={form.repairInvoiceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 font-semibold text-emerald-800 truncate"
+                      >
+                        <FileText className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{form.repairInvoiceName || 'Uploaded Invoice'}</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, repairInvoiceUrl: '', repairInvoiceName: '' })}
+                        className="text-slate-500 hover:text-rose-600 ml-2"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <button
                 type="submit"
-                disabled={loading}
-                className="min-h-11 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-700 active:translate-y-0"
+                disabled={loading || uploadingPhotos || uploadingInvoice}
+                className="min-h-11 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-700 active:translate-y-0 disabled:opacity-50"
               >
                 {loading ? 'Submitting Claim...' : 'Submit Claim for Review'}
               </button>
